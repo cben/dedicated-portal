@@ -31,19 +31,6 @@ IMPORT_PATH = "github.com/container-mgmt/dedicated-portal"
 # The name and version of the project:
 PROJECT_NAME = "dedicated-portal"
 
-# The list of tools that will be executed directly inside the Go environment
-# but without parsing the command line. For example, if the script is invoked
-# with these command line:
-#
-#   build dep ensure -v
-#
-# It will execute 'dep ensure -v' inside the go environment but it will not
-# parse or process the 'ensure' and '-v' options.
-DIRECT_TOOLS = [
-  "dep",
-  "go",
-]
-
 # The values extracted from the command line:
 argv = None
 
@@ -480,23 +467,26 @@ def ensure_image_tar(image_tag, compress=False):
     return tar_path
 
 
+# Command line subcommands
+# ------------------------
+
 def build_binaries():
     """
-    Implements the 'binaries' subcommand.
+    Build binaries into .gopath/bin/.
     """
     ensure_binaries()
 
 
 def build_apps():
     """
-    Implements the 'apps' subcommand.
+    Build each browser apps into apps/*/build/.
     """
     ensure_apps()
 
 
 def build_images():
     """
-    Implements the 'images' subcommand.
+    Build docker images, and optionally save them as tarballs.
     """
     # Build the images:
     image_tags = ensure_images()
@@ -509,7 +499,7 @@ def build_images():
 
 def lint():
     """
-    Runs the 'golint' tool on all the source files.
+    Run the 'golint' tool on all the source files.
     """
     go_tool(
         "golint",
@@ -522,9 +512,23 @@ def lint():
 
 def fmt():
     """
-    Formats all the source files of the project using the 'gofmt' tool.
+    Format all the source files of the project using the 'gofmt' tool.
     """
     go_tool("gofmt", "-s", "-l", "-w", "./pkg/", "./cmd/")
+
+
+def run_go():
+    """
+    Run 'go' with correct environment (tip: use -- to pass flags through).
+    """
+    go_tool("go", *argv.go_args)
+
+
+def run_dep():
+    """
+    Run 'dep' with correct environment (tip: use -- to pass flags through).
+    """
+    go_tool("dep", *argv.dep_args)
 
 
 def main():
@@ -545,26 +549,26 @@ def main():
         default=False,
         action="store_true",
     )
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(title="subcommands")
 
     # Create the parser for the 'binaries' command:
-    binaries_parser = subparsers.add_parser("binaries")
+    binaries_parser = subparsers.add_parser("binaries", help=build_binaries.__doc__)
     binaries_parser.set_defaults(func=build_binaries)
 
     # Create the parser for the 'apps' command:
-    apps_parser = subparsers.add_parser("apps")
+    apps_parser = subparsers.add_parser("apps", help=build_apps.__doc__)
     apps_parser.set_defaults(func=build_apps)
 
     # Create the parser for the 'lint' command:
-    lint_parser = subparsers.add_parser("lint")
+    lint_parser = subparsers.add_parser("lint", help=lint.__doc__)
     lint_parser.set_defaults(func=lint)
 
     # Create the parser for the 'fmt' command:
-    fmt_parser = subparsers.add_parser("fmt")
+    fmt_parser = subparsers.add_parser("fmt", help=fmt.__doc__)
     fmt_parser.set_defaults(func=fmt)
 
     # Create the parser for the 'images' command:
-    images_parser = subparsers.add_parser('images')
+    images_parser = subparsers.add_parser("images", help=build_images.__doc__)
     images_parser.add_argument(
         "--save",
         help="Save the images to tar files.",
@@ -584,18 +588,32 @@ def main():
     )
     images_parser.set_defaults(func=build_images)
 
+    # Tools that will be executed directly inside the Go environment.
+    go_parser = subparsers.add_parser("go", help=run_go.__doc__)
+    go_parser.add_argument(
+        "go_args",
+        nargs="*",
+        help="Arguments for go (tip: use -- to pass flags)",
+    )
+    go_parser.set_defaults(func=run_go)
+
+    dep_parser = subparsers.add_parser("dep", help=run_dep.__doc__)
+    dep_parser.add_argument(
+        "dep_args",
+        nargs="*",
+        help="Arguments for dep (tip: use -- to pass flags)",
+    )
+    dep_parser.set_defaults(func=run_dep)
+
     # Run the selected tool:
     code = 0
 
-    if len(sys.argv) > 0 and sys.argv[1] in DIRECT_TOOLS:
-        go_tool(*sys.argv[1:])
-    else:
-        global argv
-        argv = parser.parse_args()
-        if not hasattr(argv, "func"):
-            parser.print_usage()
-            code = 1
-        argv.func()
+    global argv
+    argv = parser.parse_args()
+    if not hasattr(argv, "func"):
+        parser.print_usage()
+        sys.exit(1)
+    argv.func()
 
     # Bye:
     sys.exit(code)
